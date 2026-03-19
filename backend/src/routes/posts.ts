@@ -11,7 +11,29 @@ router.post('/bulk-schedule', auth, async (req: any, res: Response): Promise<any
 
     const now = new Date();
     let currentDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 10, 0, 0); 
+    
+    // Auto-detect the last scheduled post to resume from that date instead of starting from tomorrow
+    const latestPost = await prisma.post.findFirst({
+        where: { userId: req.user.id, status: 'scheduled' },
+        orderBy: { scheduledTime: 'desc' }
+    });
+
     let postsAddedToDay = 0;
+    if (latestPost && latestPost.scheduledTime && latestPost.scheduledTime > currentDate) {
+        currentDate = new Date(latestPost.scheduledTime);
+        currentDate.setHours(10, 0, 0, 0); // reset to start time for that final day
+        
+        const dayStart = new Date(currentDate); dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(currentDate); dayEnd.setHours(23, 59, 59, 999);
+        
+        postsAddedToDay = await prisma.post.count({
+            where: {
+                userId: req.user.id,
+                status: 'scheduled',
+                scheduledTime: { gte: dayStart, lt: dayEnd }
+            }
+        });
+    }
     const limitPerDay = postsPerDay || 1;
     const allowedDays = specificDays && specificDays.length > 0 ? specificDays : [0,1,2,3,4,5,6];
 
