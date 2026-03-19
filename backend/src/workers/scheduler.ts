@@ -134,6 +134,28 @@ export const startScheduler = () => {
 
         console.log(`--- Finished Processing Post ${post.id}. Email sent. ---\n`);
       }
+      // Cleanup job: Delete posts older than 1 day
+      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const oldPosts = await prisma.post.findMany({
+        where: {
+          status: { in: ['posted', 'failed'] },
+          scheduledTime: { lte: oneDayAgo }
+        }
+      });
+      
+      for (const p of oldPosts) {
+         if (p.mediaUrl) {
+            const filename = p.mediaUrl.split('/').pop() || '';
+            const filePath = path.join(__dirname, '../../uploads', filename);
+            if (filename && fs.existsSync(filePath)) {
+               fs.unlinkSync(filePath); // delete physical file
+            }
+            await prisma.media.deleteMany({ where: { url: p.mediaUrl } }); // delete media record
+         }
+         await prisma.post.delete({ where: { id: p.id } }); // delete post record
+         console.log(`[CLEANUP] Deleted 1-day old post and media: ${p.id}`);
+      }
+
     } catch (err) {
       console.error('Scheduler main loop error:', err);
     }
